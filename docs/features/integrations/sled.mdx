@@ -1,0 +1,109 @@
+---
+title: "Sled Affiliate Tracking with Polar"
+sidebarTitle: "Sled (Affiliates)"
+---
+
+This guide explains how to integrate
+[Sled](https://usesled.com)'s affiliate tracking with your Polar
+account to run an affiliate program for your SaaS or digital product.
+
+## What is Sled?
+
+[Sled](https://usesled.com) is affiliate tracking software built for Polar.sh. It is
+Polar-native: instead of observing a Stripe account, it listens to Polar's own
+webhooks and attributes orders (including subscription renewals) to the affiliate
+who referred the customer. With Sled you can:
+
+- Track one-time purchases, subscriptions, renewals, upgrades, and refunds
+- Pay recurring commissions that survive renewals, even when the renewal webhook
+  does not carry the original referral metadata
+- Block self-referrals and disposable-email signups by default
+- Let affiliates see their own clicks, conversions, and pending commissions
+- Query your program from an AI agent over MCP (read-only)
+
+Sled does not move money: it keeps the ledger of who is owed what, and you send
+the payouts yourself (PayPal, Wise, bank, etc.). There is no per-conversion fee.
+
+## Integration Steps
+
+### 1. Create a Sled account and pick a slug
+
+1. Sign up at [usesled.com/signup](https://usesled.com/signup) (magic-link auth, no password)
+2. Pick a slug for your program (e.g. `acme`). Your program root becomes
+   `https://usesled.com/acme`
+3. Set your commission percent in **Settings**
+4. Share `https://usesled.com/{slug}/join` with potential affiliates
+
+### 2. Add the Sled tracking script to your marketing site
+
+Add the script to the `<head>` of every page where visitors can land (marketing
+site, blog, app domain):
+
+```html
+<script async src="https://usesled.com/{slug}/t.js"></script>
+```
+
+The script reads `?ref=<code>` from the URL and stores it in a first-party
+`ta_ref` cookie (90-day expiry by default). It also records a click event for
+your stats.
+
+### 3. Set Up the Polar webhook in Sled
+
+In your Polar dashboard:
+
+1. Go to [**Settings → Webhooks**](https://polar.sh/to/dashboard/settings/webhooks)
+2. Click **"Add Endpoint"**
+3. Set the URL to `https://usesled.com/{slug}/api/webhook/polar`
+4. For Format, select **RAW**
+5. In the Secret field, paste the webhook secret from **Sled → Settings**
+   (Sled generates this for you)
+6. Under Events, enable all of the following:
+   - `order.created`
+   - `order.paid`
+   - `order.refunded`
+   - `subscription.canceled`
+7. Click **Save**
+
+### 4. Pass the referral cookie to Polar checkout
+
+When creating a checkout, pass the `ta_ref` cookie as `metadata.referral` so
+Sled can attribute the order:
+
+```ts
+import { cookies } from "next/headers";
+
+await polar.checkouts.create({
+  products: [productId],
+  metadata: { referral: cookies().get("ta_ref")?.value ?? "" },
+});
+```
+
+If you are not using Next.js, read the `ta_ref` cookie on your server and pass
+it the same way.
+
+## How It Works
+
+1. A visitor lands on your site through an affiliate link (`?ref=<code>`). Sled's
+   script stores the referral in a first-party cookie.
+2. When the visitor checks out, the referral code travels to Polar as
+   `metadata.referral`.
+3. Polar fires `order.paid` (and later `order.refunded`,
+   `subscription.canceled`). Sled matches the metadata to the affiliate and
+   records the commission.
+4. Renewals inherit attribution automatically via `subscription_id`, even though
+   Polar's renewal payload does not carry the original referral metadata.
+5. Refunds claw the commission back automatically, including when the refund
+   webhook arrives before the sale (a real Polar quirk Sled handles).
+
+## Notes
+
+- Sled credits commissions only on Polar's paid-order event, so an affiliate is
+  never credited for an order that never settled.
+- Webhook events are idempotent: retries never double-count.
+- Self-referral and disposable-email blocking are on by default.
+
+## Getting Help
+
+- Docs: [usesled.com/docs](https://usesled.com/docs)
+- Integration guide: [usesled.com/docs](https://usesled.com/docs)
+- Contact: the Sled dashboard and support channels listed there
